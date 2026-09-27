@@ -1,0 +1,66 @@
+# Currency Converter Build Plan
+
+- [ ] If earlier sections have no commits, make one simple retro-commit per already checkpoint-passed section, in order. This workspace currently has no Git repository; initialize/use Git before committing.
+
+## 1. Project foundation and secret handling
+- [x] Set up a Vite React frontend and a FastAPI backend in a clear `frontend/` and `backend/` structure.
+- [x] Keep the frontend/backend folder split simple and readable; avoid extra layering without a clear need.
+- [x] Add `.env` to `.gitignore` as the first repository change; provide `.env.example` containing only `EXCHANGERATE_API_KEY=` and no real key.
+- [x] Add backend configuration that reads `EXCHANGERATE_API_KEY` from the environment and fails safely with a clear setup message when it is absent.
+- [x] Check current ExchangeRate API documentation and document plan limits: latest rates are available on all plans; historical data requires Pro, Business, or Volume. Individual account access could not be verified because no key was provided.
+- [x] Add install/run instructions and basic health checks.
+
+**Checkpoint 1 - PASSED:** Verified the `.env` ignore rule with the non-Git workspace fallback (this folder has no `.git` repository), confirmed `.env.example` contains only `EXCHANGERATE_API_KEY=`, installed frontend and backend dependencies, built the frontend, passed both settings tests, started both services, and confirmed the backend health route and Vite proxy return HTTP 200.
+- [ ] After Checkpoint 1 passes, make a short commit: `Section 1: foundation and secret handling done`.
+
+## 2. Exchange-rate service and conversion API
+- [x] Implement a backend ExchangeRate API client with timeouts, input validation, and useful handling for missing keys, unsupported currencies, provider errors, and rate limits.
+- [x] Add a currency-list endpoint and a conversion endpoint that accepts source currency, target currency, and amount, returning the rate, converted amount, and timestamp.
+- [x] Keep provider credentials on the server; never expose the key to the frontend or include it in logs/responses.
+- [x] Keep rate fetching, conversion math, and validation in FastAPI; the frontend only handles input and displays returned data.
+
+**Checkpoint 2 - before persistence:** With a valid local key, request a known pair (for example EUR to USD) and verify the response has the requested currencies, a positive rate, the correct amount calculation within rounding tolerance, and a timestamp. Verify invalid currency codes and a missing key produce controlled HTTP errors without leaking the key.
+- [ ] After Checkpoint 2 passes, make a short commit: `Section 2: ExchangeRate API done`.
+
+## 3. SQLite persistence and history
+- [x] Create SQLite schema and startup initialization for conversion history, favorite currency pairs, and daily rate snapshots.
+- [x] Persist successful conversions and provide endpoints to list recent history and clear it.
+- [x] Save, list, and remove favorite pairs with duplicate handling.
+- [x] Store one daily snapshot per base currency when rates are fetched; keep missing dates absent rather than fabricating history.
+
+**Checkpoint 3 - PASSED:** Persistence tests use a temporary SQLite database, verify conversions and favorites including duplicate handling, check daily snapshot upsert and absent dates, and confirm saved data survives a FastAPI restart.
+- [ ] After Checkpoint 3 passes, make a short commit: `Section 3: SQLite persistence done`.
+
+## 4. Historical trend API and chart
+- Add a history endpoint for a currency pair and requested 7-, 30-, or 90-day range.
+- Normalize provider and snapshot data into dated rate points, clearly indicate data gaps, and handle insufficient history without crashing.
+- Add a lightweight responsive chart below the converter with 7/30/90-day controls and clear date/rate axes.
+
+**Checkpoint 4 - before interaction polish:** Test the history endpoint for all three ranges using seeded SQLite data, including a gap and an empty range. In the browser, verify each range requests and displays the matching dates, the chart renders with no data, one point, and multiple points, and resizing to a narrow viewport keeps labels and controls usable.
+- [ ] After Checkpoint 4 passes, make a short commit: `Section 4: historical trends done`.
+
+## 5. Converter interface and live conversion flow
+- Build the OANDA-inspired minimal converter screen with prominent amount input, source/target currency selectors, clear converted output, swap action, loading/error states, and a trend chart below.
+- Populate selectors from the backend currency list and refresh the result when amount or either currency changes, with debouncing where appropriate.
+- Show the effective rate and data timestamp near the result; keep keyboard and screen-reader interaction usable.
+
+**Checkpoint 5 - before travel mode:** In the browser, convert in both directions, change amount and currencies, swap the pair, and verify the output matches the backend result. Confirm loading, invalid input, offline/provider error, and small-screen states are legible and do not show stale results as current.
+- [ ] After Checkpoint 5 passes, make a short commit: `Section 5: converter interface done`.
+
+## 6. Conversion history, favorites, and travel budgeting
+- Add a recent-conversions view backed by SQLite, with a way to reselect a prior pair and clear history.
+- Add favorite-pair controls backed by SQLite, including add/remove and quick selection.
+- Add a Travel Budgeting toggle. When enabled, accept one base amount and show conversions to USD, EUR, GBP, JPY, and AUD in a comparison table; when disabled, return to the standard single-pair workflow.
+- Handle a base currency that is also one of the five targets and partial provider failures clearly.
+
+**Checkpoint 6 - before release pass:** Exercise add/remove/select favorite, reload and verify it persists, create/reselect/clear history, enable budgeting and verify all five target rows calculate from the same entered amount, then disable it and verify single-pair conversion returns. Test base currency equal to a target, invalid input, and a failed quote without losing other valid rows.
+- [ ] After Checkpoint 6 passes, make a short commit: `Section 6: favorites and travel budgeting done`.
+
+## 7. End-to-end hardening and run documentation
+- Add focused backend tests and frontend coverage for the primary user flows, API failures, and persistence behavior.
+- Verify CORS and local configuration, ensure secrets and database files are ignored appropriately, and review error messages for accidental credential disclosure.
+- Document prerequisites, local `.env` creation using `.env.example`, how to obtain/configure an API key, database behavior, and commands to run tests and both services.
+- [ ] Confirm `.gitignore` excludes `.env` and SQLite files, README explains how to run the app, and no API key appears in repository files or commit history.
+
+**Checkpoint 7 - completion:** From a clean install, follow the documented setup, add a real key only to local `.env`, run backend and frontend tests, start both services, and complete one live conversion, one chart-range change, one persisted favorite/history action, and one travel-budget comparison in the browser. Confirm `git status` does not list `.env` or the SQLite database and inspect responses/logs to ensure the API key is never exposed.
+- [ ] After Checkpoint 7 passes, make a short commit: `Section 7: end-to-end hardening done`.
