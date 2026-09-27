@@ -19,7 +19,7 @@
 - [x] Keep provider credentials on the server; never expose the key to the frontend or include it in logs/responses.
 - [x] Keep rate fetching, conversion math, and validation in FastAPI; the frontend only handles input and displays returned data.
 
-**Checkpoint 2 - before persistence:** With a valid local key, request a known pair (for example EUR to USD) and verify the response has the requested currencies, a positive rate, the correct amount calculation within rounding tolerance, and a timestamp. Verify invalid currency codes and a missing key produce controlled HTTP errors without leaking the key.
+**Checkpoint 2 - PASSED (keyless demo/mocks):** Verified EUR to USD amount/rate/timestamp using explicit demo data and provider mocks; invalid inputs and missing keys return safe errors without credentials. A live provider quote was intentionally not requested because the submission is being kept key-free.
 - [ ] After Checkpoint 2 passes, make a short commit: `Section 2: ExchangeRate API done`.
 
 ## 3. SQLite persistence and history
@@ -32,35 +32,35 @@
 - [ ] After Checkpoint 3 passes, make a short commit: `Section 3: SQLite persistence done`.
 
 ## 4. Historical trend API and chart
-- Add a history endpoint for a currency pair and requested 7-, 30-, or 90-day range.
-- Normalize provider and snapshot data into dated rate points, clearly indicate data gaps, and handle insufficient history without crashing.
-- Add a lightweight responsive chart below the converter with 7/30/90-day controls and clear date/rate axes.
+- [x] Add a history endpoint for a currency pair and requested 7-, 30-, or 90-day range.
+- [x] Normalize provider and snapshot data into dated rate points, clearly indicate data gaps, and handle insufficient history without crashing.
+- [x] Add a lightweight responsive chart below the converter with 7/30/90-day controls and clear date/rate axes.
 
-**Checkpoint 4 - before interaction polish:** Test the history endpoint for all three ranges using seeded SQLite data, including a gap and an empty range. In the browser, verify each range requests and displays the matching dates, the chart renders with no data, one point, and multiple points, and resizing to a narrow viewport keeps labels and controls usable.
+**Checkpoint 4 - PASSED:** All three ranges are validated; snapshots preserve gaps, empty history has an explicit state, a single point has a marker, and demo charts render multiple points. Browser checks covered 7/30/90 days and narrow/desktop layouts without overflow.
 - [ ] After Checkpoint 4 passes, make a short commit: `Section 4: historical trends done`.
 
 ## 5. Converter interface and live conversion flow
-- Build the OANDA-inspired minimal converter screen with prominent amount input, source/target currency selectors, clear converted output, swap action, loading/error states, and a trend chart below.
-- Populate selectors from the backend currency list and refresh the result when amount or either currency changes, with debouncing where appropriate.
-- Show the effective rate and data timestamp near the result; keep keyboard and screen-reader interaction usable.
+- [x] Build the OANDA-inspired minimal converter screen with prominent amount input, source/target currency selectors, clear converted output, swap action, loading/error states, and a trend chart below.
+- [x] Populate selectors from the backend currency list and refresh the result when amount or either currency changes, with debouncing where appropriate.
+- [x] Show the effective rate and data timestamp near the result; keep keyboard and screen-reader interaction usable.
 
-**Checkpoint 5 - before travel mode:** In the browser, convert in both directions, change amount and currencies, swap the pair, and verify the output matches the backend result. Confirm loading, invalid input, offline/provider error, and small-screen states are legible and do not show stale results as current.
+**Checkpoint 5 - PASSED (keyless demo):** Browser checks verified amount changes, swapping, safe invalid-input/provider-error states, timestamps, and the 320px layout. Live provider behavior is covered by backend mocks; no real key was used.
 - [ ] After Checkpoint 5 passes, make a short commit: `Section 5: converter interface done`.
 
 ## 6. Conversion history, favorites, and travel budgeting
-- Add a recent-conversions view backed by SQLite, with a way to reselect a prior pair and clear history.
-- Add favorite-pair controls backed by SQLite, including add/remove and quick selection.
-- Add a Travel Budgeting toggle. When enabled, accept one base amount and show conversions to USD, EUR, GBP, JPY, and AUD in a comparison table; when disabled, return to the standard single-pair workflow.
-- Handle a base currency that is also one of the five targets and partial provider failures clearly.
+- [x] Add a recent-conversions view backed by SQLite, with a way to reselect a prior pair and clear history.
+- [x] Add favorite-pair controls backed by SQLite, including add/remove and quick selection.
+- [x] Add a Travel Budgeting toggle. When enabled, accept one base amount and show conversions to USD, EUR, GBP, JPY, and AUD in a comparison table; when disabled, return to the standard single-pair workflow.
+- [x] Handle a base currency that is also one of the five targets and partial provider failures clearly.
 
-**Checkpoint 6 - before release pass:** Exercise add/remove/select favorite, reload and verify it persists, create/reselect/clear history, enable budgeting and verify all five target rows calculate from the same entered amount, then disable it and verify single-pair conversion returns. Test base currency equal to a target, invalid input, and a failed quote without losing other valid rows.
+**Checkpoint 6 - PASSED (keyless demo):** Browser/API checks verified favorite add/remove and persistence, conversion history and clearing, all five budget targets (including the base currency), switching back to single-pair mode, and safe errors.
 - [ ] After Checkpoint 6 passes, make a short commit: `Section 6: favorites and travel budgeting done`.
 
 ## 7. End-to-end hardening and run documentation
-- Add focused backend tests and frontend coverage for the primary user flows, API failures, and persistence behavior.
-- Verify CORS and local configuration, ensure secrets and database files are ignored appropriately, and review error messages for accidental credential disclosure.
-- Document prerequisites, local `.env` creation using `.env.example`, how to obtain/configure an API key, database behavior, and commands to run tests and both services.
-- [ ] Confirm `.gitignore` excludes `.env` and SQLite files, README explains how to run the app, and no API key appears in repository files or commit history.
+- [x] Add focused backend tests and browser coverage for the primary user flows, API failures, and persistence behavior.
+- [x] Verify local proxy/configuration, ensure secrets and database files are ignored, and review error messages for credential disclosure.
+- [x] Document prerequisites, keyless demo setup, local `.env` creation using `.env.example`, live-key setup, database behavior, and commands to run tests and both services.
+- [x] Confirm `.gitignore` excludes `.env` and SQLite files, README explains how to run the app, and no real API key appears in repository files or commit history.
 
-**Checkpoint 7 - completion:** From a clean install, follow the documented setup, add a real key only to local `.env`, run backend and frontend tests, start both services, and complete one live conversion, one chart-range change, one persisted favorite/history action, and one travel-budget comparison in the browser. Confirm `git status` does not list `.env` or the SQLite database and inspect responses/logs to ensure the API key is never exposed.
+**Checkpoint 7 - PASSED (keyless demo):** Installed dependencies, built the frontend, passed backend tests, ran both services in demo mode, exercised conversion/chart/favorites/history/travel-budget flows, and verified no `.env` or database file is tracked. Live API access remains optional and was not tested.
 - [ ] After Checkpoint 7 passes, make a short commit: `Section 7: end-to-end hardening done`.

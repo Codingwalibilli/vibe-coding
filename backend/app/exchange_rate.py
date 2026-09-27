@@ -1,7 +1,9 @@
+import math
+import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import httpx
@@ -11,6 +13,30 @@ from .settings import ConfigurationError, get_exchange_rate_api_key
 API_BASE_URL = "https://v6.exchangerate-api.com/v6/"
 REQUEST_TIMEOUT = httpx.Timeout(5.0, connect=2.0)
 _CURRENCY_CODE = re.compile(r"^[A-Z]{3}$")
+_DEMO_CURRENCIES = {
+    "USD": "US Dollar",
+    "EUR": "Euro",
+    "GBP": "British Pound",
+    "JPY": "Japanese Yen",
+    "AUD": "Australian Dollar",
+    "CAD": "Canadian Dollar",
+    "CHF": "Swiss Franc",
+    "INR": "Indian Rupee",
+    "NZD": "New Zealand Dollar",
+    "SGD": "Singapore Dollar",
+}
+_DEMO_USD_VALUES = {
+    "USD": Decimal("1"),
+    "EUR": Decimal("1.08"),
+    "GBP": Decimal("1.27"),
+    "JPY": Decimal("0.0067"),
+    "AUD": Decimal("0.66"),
+    "CAD": Decimal("0.73"),
+    "CHF": Decimal("1.12"),
+    "INR": Decimal("0.012"),
+    "NZD": Decimal("0.61"),
+    "SGD": Decimal("0.74"),
+}
 
 
 class ExchangeRateError(RuntimeError):
@@ -32,6 +58,7 @@ class Quote:
     timestamp: str
     rates: dict[str, Decimal]
     snapshot_date: date
+    source: str = "live"
 
 
 _PROVIDER_ERRORS: dict[str, tuple[int, str]] = {
@@ -53,6 +80,10 @@ class ExchangeRateClient:
     ) -> None:
         self._http_client = http_client
         self._api_key_provider = api_key_provider or get_exchange_rate_api_key
+
+    @property
+    def demo_mode(self) -> bool:
+        return os.getenv("CURRENCY_DEMO_MODE", "").strip().lower() in {"1", "true", "yes"}
 
     async def get_currencies(self) -> list[Currency]:
         payload = await self._get_json("codes")
@@ -85,15 +116,23 @@ class ExchangeRateClient:
         if not amount.is_finite() or amount <= 0:
             raise ExchangeRateError("Amount must be a finite number greater than zero.", 422)
 
-        rates, timestamp, snapshot_date = await self.get_latest_rates(source_code)
+        rates, timestamp, snapshot_date, data_source = await self.get_latest_rates(source_code)
         rate = rates.get(target_code)
         if rate is None:
             raise ExchangeRateError("The requested currency code is not supported.", 422)
         if not rate.is_finite() or rate <= 0:
             raise self._invalid_provider_response()
-        return Quote(rate=rate, timestamp=timestamp, rates=rates, snapshot_date=snapshot_date)
+        return Quote(
+            rate=rate,
+            timestamp=timestamp,
+            rates=rates,
+            snapshot_date=snapshot_date,
+            source=data_source,
+        )
 
-    async def get_latest_rates(self, base: str) -> tuple[dict[str, Decimal], str, date]:
+    async def get_latest_rates(
+        self, base: str
+    ) -> tuple[dict[str, Decimal], str, date, str]:
         base_code = self._normalize_currency_code(base)
         payload = await self._get_json(f"latest/{base_code}")
         if str(payload.get("base_code", "")).upper() != base_code:
@@ -123,9 +162,37 @@ class ExchangeRateClient:
             snapshot_date = datetime.now(UTC).date()
         if base_code not in rates:
             rates[base_code] = Decimal("1")
-        return rates, timestamp, snapshot_date
+        data_source = str(payload.get("_data_source", "live"))
+        return rates, timestamp, snapshot_date, data_source
+
+    def demo_history(self, source: str, target: str, days: int) -> list[dict[str, object]]:
+        source_code = self._normalize_currency_code(source)
+        target_code = self._normalize_currency_code(target)
+        if not self.demo_mode:
+            return []
+        if source_code not in _DEMO_USD_VALUES or target_code not in _DEMO_USD_VALUES:
+            return []
+
+        base_rate = _DEMO_USD_VALUES[source_code] / _DEMO_USD_VALUES[target_code]
+        seed = sum(ord(character) for character in source_code + target_code)
+        today = datetime.now(UTC).date()
+        points: list[dict[str, object]] = []
+        for offset in range(days):
+            elapsed = offset - days + 1
+            wave = 1 + 0.009 * math.sin((offset + seed) * 0.43)
+            wave += 0.003 * math.cos((offset + seed) * 0.19)
+            points.append(
+                {
+                    "date": (today + timedelta(days=elapsed)).isoformat(),
+                    "rate": str(base_rate * Decimal(str(wave))),
+                }
+            )
+        return points
 
     async def _get_json(self, path: str) -> dict[str, object]:
+        if self.demo_mode:
+            return self._demo_response(path)
+
         try:
             api_key = self._api_key_provider()
         except ConfigurationError as error:
@@ -156,6 +223,37 @@ class ExchangeRateClient:
             )
             raise ExchangeRateError(message, status_code)
         return payload
+
+    @staticmethod
+    def _demo_response(path: str) -> dict[str, object]:
+        now = datetime.now(UTC)
+        timestamp = now.strftime("%a, %d %b %Y %H:%M:%S +0000")
+        if path == "codes":
+            return {
+                "result": "success",
+                "supported_codes": [[code, name] for code, name in _DEMO_CURRENCIES.items()],
+                "_data_source": "demo",
+            }
+
+        if path.startswith("latest/"):
+            base_code = path.removeprefix("latest/").upper()
+            if base_code not in _DEMO_USD_VALUES:
+                return {"result": "error", "error-type": "unsupported-code"}
+            base_value = _DEMO_USD_VALUES[base_code]
+            rates = {
+                code: float(base_value / usd_value)
+                for code, usd_value in _DEMO_USD_VALUES.items()
+            }
+            return {
+                "result": "success",
+                "base_code": base_code,
+                "conversion_rates": rates,
+                "time_last_update_unix": int(now.timestamp()),
+                "time_last_update_utc": timestamp,
+                "_data_source": "demo",
+            }
+
+        return {"result": "error", "error-type": "malformed-request"}
 
     @staticmethod
     def _normalize_currency_code(code: str) -> str:

@@ -28,7 +28,8 @@ class Database:
                     amount TEXT NOT NULL,
                     rate TEXT NOT NULL,
                     converted_amount TEXT NOT NULL,
-                    timestamp TEXT NOT NULL
+                    timestamp TEXT NOT NULL,
+                    data_source TEXT NOT NULL DEFAULT 'live'
                 );
                 CREATE INDEX IF NOT EXISTS idx_conversions_timestamp
                     ON conversions(timestamp DESC);
@@ -50,6 +51,13 @@ class Database:
                 );
                 """
             )
+            conversion_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(conversions)")
+            }
+            if "data_source" not in conversion_columns:
+                connection.execute(
+                    "ALTER TABLE conversions ADD COLUMN data_source TEXT NOT NULL DEFAULT 'live'"
+                )
 
     def save_conversion(
         self,
@@ -59,12 +67,14 @@ class Database:
         rate: Decimal,
         converted_amount: Decimal,
         timestamp: str,
+        data_source: str = "live",
     ) -> int:
         with self._connect() as connection:
             cursor = connection.execute(
                 """INSERT INTO conversions
-                   (source_currency, target_currency, amount, rate, converted_amount, timestamp)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   (source_currency, target_currency, amount, rate, converted_amount, timestamp,
+                    data_source)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     source_currency,
                     target_currency,
@@ -72,6 +82,7 @@ class Database:
                     str(rate),
                     str(converted_amount),
                     timestamp,
+                    data_source,
                 ),
             )
             return int(cursor.lastrowid)
@@ -149,6 +160,48 @@ class Database:
             record["rates"] = json.loads(record.pop("rates_json"))
             snapshots.append(record)
         return snapshots
+
+    def list_pair_snapshots(
+        self, source_currency: str, target_currency: str, start_date: date, end_date: date
+    ) -> list[dict[str, str]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT base_currency, snapshot_date, rates_json, timestamp
+                   FROM daily_snapshots
+                   WHERE base_currency IN (?, ?) AND snapshot_date BETWEEN ? AND ?
+                   ORDER BY snapshot_date""",
+                (
+                    source_currency,
+                    target_currency,
+                    start_date.isoformat(),
+                    end_date.isoformat(),
+                ),
+            ).fetchall()
+
+        rates_by_date: dict[str, tuple[Decimal, str, bool]] = {}
+        for row in rows:
+            rates = json.loads(row["rates_json"])
+            base_currency = row["base_currency"]
+            is_direct = base_currency == source_currency
+            if is_direct:
+                raw_rate = rates.get(target_currency)
+                rate = Decimal(raw_rate) if raw_rate is not None else None
+            else:
+                raw_inverse = rates.get(source_currency)
+                inverse = Decimal(raw_inverse) if raw_inverse is not None else None
+                rate = Decimal("1") / inverse if inverse and inverse > 0 else None
+
+            if rate is None or rate <= 0:
+                continue
+            snapshot_date = row["snapshot_date"]
+            existing = rates_by_date.get(snapshot_date)
+            if existing is None or is_direct:
+                rates_by_date[snapshot_date] = (rate, row["timestamp"], is_direct)
+
+        return [
+            {"date": day, "rate": str(rate), "timestamp": timestamp}
+            for day, (rate, timestamp, _) in sorted(rates_by_date.items())
+        ]
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=5.0)

@@ -44,3 +44,23 @@ def test_persistence_and_daily_snapshot_upsert(tmp_path: Path) -> None:
     assert reopened_database.list_daily_snapshots(
         "EUR", date(2026, 9, 28), date(2026, 9, 29)
     ) == []
+
+
+def test_pair_history_uses_direct_or_inverse_stored_rates(tmp_path: Path) -> None:
+    database = Database(tmp_path / "pair-history.sqlite3")
+    database.initialize()
+    first_day = date(2026, 9, 20)
+    third_day = date(2026, 9, 22)
+    database.save_daily_snapshot(
+        "EUR", first_day, {"EUR": Decimal("1"), "USD": Decimal("1.1")}, "day one"
+    )
+    database.save_daily_snapshot(
+        "USD", third_day, {"USD": Decimal("1"), "EUR": Decimal("0.8")}, "day three"
+    )
+
+    observations = database.list_pair_snapshots("EUR", "USD", first_day, third_day)
+
+    assert observations == [
+        {"date": first_day.isoformat(), "rate": "1.1", "timestamp": "day one"},
+        {"date": third_day.isoformat(), "rate": "1.25", "timestamp": "day three"},
+    ]

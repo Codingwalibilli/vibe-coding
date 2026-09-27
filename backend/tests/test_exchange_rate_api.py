@@ -24,6 +24,8 @@ TEST_API_KEY = "private-test-key"
 
 
 class StubExchangeRateClient:
+    demo_mode = False
+
     async def get_currencies(self) -> list[Currency]:
         return [Currency(code="EUR", name="Euro"), Currency(code="USD", name="US Dollar")]
 
@@ -33,7 +35,20 @@ class StubExchangeRateClient:
             timestamp="Sun, 27 Sep 2026 00:00:00 +0000",
             rates={"EUR": Decimal("1"), "USD": Decimal("1.08")},
             snapshot_date=date(2026, 9, 27),
+            source="demo",
         )
+
+    async def get_latest_rates(
+        self, base: str
+    ) -> tuple[dict[str, Decimal], str, date, str]:
+        rates = {
+            "USD": Decimal("0.92"),
+            "EUR": Decimal("1"),
+            "GBP": Decimal("0.8"),
+            "JPY": Decimal("160"),
+            "AUD": Decimal("1.65"),
+        }
+        return rates, "Sun, 27 Sep 2026 00:00:00 +0000", date(2026, 9, 27), "demo"
 
 
 @pytest.fixture
@@ -101,7 +116,62 @@ def test_favorites_and_history_endpoints(api_client: TestClient) -> None:
     assert api_client.delete("/api/history").json() == {"deleted": 0}
 
 
-def test_conversion_history_survives_backend_restart(
+def test_history_endpoint_returns_empty_without_observations(api_client: TestClient) -> None:
+    response = api_client.get(
+        "/api/rates/history", params={"from": "EUR", "to": "USD", "days": 30}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["observations"] == []
+    assert response.json()["data_source"] == "none"
+
+
+def test_history_endpoint_accepts_only_supported_ranges(api_client: TestClient) -> None:
+    for days in (7, 30, 90):
+        response = api_client.get(
+            "/api/rates/history", params={"from": "EUR", "to": "USD", "days": days}
+        )
+        assert response.status_code == 200
+        assert response.json()["days"] == days
+
+    invalid_range = api_client.get(
+        "/api/rates/history", params={"from": "EUR", "to": "USD", "days": 14}
+    )
+    assert invalid_range.status_code == 422
+
+
+def test_travel_budget_returns_five_conversions(api_client: TestClient) -> None:
+    response = api_client.get(
+        "/api/convert/budget", params={"from": "EUR", "amount": "100"}
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert [row["currency"] for row in result["results"]] == [
+        "USD", "EUR", "GBP", "JPY", "AUD"
+    ]
+    assert result["results"][1]["converted_amount"] == 100
+    assert result["data_source"] == "demo"
+
+
+def test_demo_mode_works_without_an_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CURRENCY_DEMO_MODE", "true")
+    monkeypatch.delenv("EXCHANGERATE_API_KEY", raising=False)
+
+    async def load_demo_quote() -> tuple[list[Currency], Quote]:
+        async with httpx.AsyncClient(base_url=API_BASE_URL) as http_client:
+            client = ExchangeRateClient(http_client)
+            currencies = await client.get_currencies()
+            quote = await client.convert("EUR", "USD", Decimal("5"))
+            return currencies, quote
+
+    currencies, quote = asyncio.run(load_demo_quote())
+    assert "EUR" in {currency.code for currency in currencies}
+    assert quote.source == "demo"
+    assert quote.rate > 0
+
+
+def test_demo_conversion_history_survives_restart_without_live_snapshot(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "restart.sqlite3"))
@@ -118,7 +188,7 @@ def test_conversion_history_survives_backend_restart(
             conversions = restarted_app.get("/api/history").json()["conversions"]
             assert len(conversions) == 1
             assert conversions[0]["amount"] == "3"
-            assert restarted_app.app.state.database.list_daily_snapshots(
+            assert not restarted_app.app.state.database.list_daily_snapshots(
                 "EUR", date(2026, 9, 27), date(2026, 9, 27)
             )
     finally:
