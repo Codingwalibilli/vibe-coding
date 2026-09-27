@@ -1,6 +1,6 @@
 # Currency Converter Build Plan
 
-- [ ] If earlier sections have no commits, make one simple retro-commit per already checkpoint-passed section, in order. This workspace currently has no Git repository; initialize/use Git before committing.
+- [x] Initialize Git and push the initial project commit (`7de7c67`). Keep future checkpoint commits short and section-specific.
 
 ## 1. Project foundation and secret handling
 - [x] Set up a Vite React frontend and a FastAPI backend in a clear `frontend/` and `backend/` structure.
